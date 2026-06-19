@@ -793,12 +793,9 @@ window.onYouTubeIframeAPIReady = function () {
       height: '200',
       videoId: '',
       playerVars: {
-        controls: 0,
-        disablekb: 1,
-        modestbranding: 1,
+        controls: 1,
         rel: 0,
         iv_load_policy: 3,
-        origin: location.origin || 'http://localhost',
       },
       events: {
         onReady:       () => onPlayerReady(d),
@@ -843,7 +840,7 @@ function onPlayerError(d, e) {
     151: 'Embedding disabled by owner.',
     153: 'Embedding disabled by owner.',
   };
-  const msg = msgs[e.data] || 'Playback error (code ' + e.data + ').';
+  const msg = (msgs[e.data] || 'Playback error') + ' (code ' + e.data + ').';
   document.getElementById('error-' + d + '-msg').textContent = msg;
   document.getElementById('error-' + d).classList.add('visible');
   stopPoll(d);
