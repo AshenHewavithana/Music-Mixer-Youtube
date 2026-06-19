@@ -836,6 +836,8 @@ function onPlayerError(d, e) {
     100: 'Video not found or private.',
     101: 'Embedding disabled by owner.',
     150: 'Embedding disabled by owner.',
+    151: 'Embedding disabled by owner.',
+    153: 'Embedding disabled by owner.',
   };
   const msg = msgs[e.data] || 'Playback error (code ' + e.data + ').';
   document.getElementById('error-' + d + '-msg').textContent = msg;
