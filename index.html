@@ -1,0 +1,1251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeckTube — Dual-Deck YouTube DJ Console</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0d0d0f;
+    --surface:  #18181c;
+    --panel:    #1e1e24;
+    --border:   #2e2e38;
+    --accent-a: #4a9eff;
+    --accent-b: #ff6b4a;
+    --live:     #22c55e;
+    --text:     #e2e2e8;
+    --muted:    #7a7a8a;
+    --danger:   #ef4444;
+    --slider-h: 6px;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: 13px;
+    overflow-x: hidden;
+  }
+
+  /* ── Layout ─────────────────────────────────────────────────────── */
+  #app {
+    display: grid;
+    grid-template-rows: auto 1fr auto auto;
+    grid-template-columns: 1fr;
+    min-height: 100vh;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 18px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  header h1 {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    color: #fff;
+  }
+  header h1 span { color: var(--accent-a); }
+
+  .note-badge {
+    font-size: 11px;
+    color: var(--muted);
+    background: #111116;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 3px 8px;
+  }
+
+  #queue-toggle {
+    margin-left: auto;
+  }
+
+  /* decks + sidebar */
+  #main-area {
+    display: flex;
+    overflow: hidden;
+  }
+
+  #decks {
+    flex: 1;
+    display: flex;
+    gap: 2px;
+    padding: 10px 10px 6px;
+    min-width: 0;
+  }
+
+  /* ── Deck Panel ──────────────────────────────────────────────────── */
+  .deck {
+    flex: 1;
+    background: var(--panel);
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    overflow: hidden;
+    min-width: 0;
+    transition: border-color .25s;
+  }
+
+  .deck.live { border-color: var(--live); }
+  .deck-a.live { border-color: var(--accent-a); }
+  .deck-b.live { border-color: var(--accent-b); }
+
+  .deck-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .deck-label {
+    font-size: 16px;
+    font-weight: 800;
+    width: 22px;
+  }
+  .deck-a .deck-label { color: var(--accent-a); }
+  .deck-b .deck-label { color: var(--accent-b); }
+
+  .live-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--border);
+    transition: background .2s;
+    flex-shrink: 0;
+  }
+  .deck.live .live-dot { background: var(--live); box-shadow: 0 0 6px var(--live); }
+
+  .track-title {
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* iframe */
+  .player-wrap {
+    position: relative;
+    background: #000;
+    flex-shrink: 0;
+  }
+  .player-wrap iframe {
+    display: block;
+    width: 100%;
+    height: 200px;
+    border: none;
+  }
+
+  .error-overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,.85);
+    color: var(--danger);
+    font-size: 12px;
+    text-align: center;
+    padding: 20px;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .error-overlay.visible { display: flex; }
+
+  /* controls area */
+  .deck-controls {
+    flex: 1;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow-y: auto;
+  }
+
+  /* load row */
+  .load-row {
+    display: flex;
+    gap: 6px;
+  }
+  .load-row input {
+    flex: 1;
+    background: #111116;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--text);
+    padding: 5px 8px;
+    font-size: 12px;
+    outline: none;
+    min-width: 0;
+  }
+  .load-row input:focus { border-color: var(--accent-a); }
+  .deck-b .load-row input:focus { border-color: var(--accent-b); }
+
+  /* seek */
+  .seek-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .time-label {
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+    min-width: 72px;
+  }
+
+  /* transport buttons */
+  .transport {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  /* volume trim */
+  .trim-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .trim-row label { font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+  /* tempo */
+  .tempo-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .tempo-row label { font-size: 11px; color: var(--muted); }
+  .tempo-row select {
+    background: #111116;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 4px;
+    padding: 3px 6px;
+    font-size: 11px;
+  }
+  .tempo-note { font-size: 10px; color: var(--muted); font-style: italic; }
+
+  /* cue points */
+  .cue-section { display: flex; flex-direction: column; gap: 6px; }
+  .cue-section label { font-size: 11px; color: var(--muted); }
+  .cue-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    min-height: 24px;
+  }
+  .cue-chip {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: #111116;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: border-color .15s;
+    user-select: none;
+  }
+  .cue-chip:hover { border-color: var(--accent-a); }
+  .deck-b .cue-chip:hover { border-color: var(--accent-b); }
+  .cue-chip .del {
+    color: var(--danger);
+    font-size: 12px;
+    line-height: 1;
+    margin-left: 2px;
+    opacity: .6;
+  }
+  .cue-chip .del:hover { opacity: 1; }
+
+  /* ── Generic button styles ───────────────────────────────────────── */
+  .btn {
+    cursor: pointer;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--surface);
+    color: var(--text);
+    padding: 5px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    transition: background .15s, border-color .15s;
+    white-space: nowrap;
+    line-height: 1.4;
+  }
+  .btn:hover { background: #2a2a34; }
+  .btn:active { background: #1a1a22; }
+
+  .btn-a { border-color: var(--accent-a); color: var(--accent-a); }
+  .btn-a:hover { background: rgba(74,158,255,.12); }
+
+  .btn-b { border-color: var(--accent-b); color: var(--accent-b); }
+  .btn-b:hover { background: rgba(255,107,74,.12); }
+
+  .btn-sm { padding: 3px 7px; font-size: 11px; }
+  .btn-icon { padding: 5px 8px; font-size: 14px; }
+  .btn-primary {
+    background: var(--accent-a);
+    border-color: var(--accent-a);
+    color: #000;
+    font-weight: 700;
+  }
+  .btn-primary:hover { background: #6db0ff; border-color: #6db0ff; }
+
+  /* ── Range input (shared) ────────────────────────────────────────── */
+  input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    flex: 1;
+    height: var(--slider-h);
+    border-radius: 3px;
+    background: var(--border);
+    outline: none;
+    cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--text);
+    cursor: pointer;
+    transition: transform .1s;
+  }
+  input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+  input[type=range]::-moz-range-thumb {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--text);
+    border: none;
+    cursor: pointer;
+  }
+
+  .seek-bar { --track-color: #3a3a48; }
+  .seek-bar::-webkit-slider-runnable-track { background: var(--track-color); border-radius: 3px; }
+
+  /* ── Crossfader section ──────────────────────────────────────────── */
+  #crossfader-section {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 12px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .cf-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .cf-label {
+    font-size: 13px;
+    font-weight: 800;
+    width: 20px;
+    text-align: center;
+  }
+  .cf-label-a { color: var(--accent-a); }
+  .cf-label-b { color: var(--accent-b); }
+
+  #crossfader {
+    flex: 1;
+    height: 10px;
+  }
+  #crossfader::-webkit-slider-thumb {
+    width: 20px; height: 20px;
+    background: #fff;
+    border: 2px solid var(--border);
+  }
+  #crossfader::-moz-range-thumb {
+    width: 20px; height: 20px;
+    background: #fff;
+    border: 2px solid var(--border);
+  }
+
+  .auto-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .auto-row label { font-size: 11px; color: var(--muted); }
+  .auto-row input[type=number] {
+    width: 52px;
+    background: #111116;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 4px;
+    padding: 3px 6px;
+    font-size: 12px;
+  }
+
+  #transition-status {
+    font-size: 11px;
+    color: var(--muted);
+    min-width: 80px;
+  }
+
+  /* ── Keyboard shortcuts hint ─────────────────────────────────────── */
+  #shortcuts-hint {
+    font-size: 10px;
+    color: var(--muted);
+    text-align: center;
+    padding: 4px 0 6px;
+    border-top: 1px solid var(--border);
+    margin-top: 2px;
+  }
+  #shortcuts-hint kbd {
+    background: #111116;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 4px;
+    font-size: 10px;
+    font-family: inherit;
+  }
+
+  /* ── Queue sidebar ───────────────────────────────────────────────── */
+  #queue-panel {
+    width: 260px;
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    transition: width .25s ease, opacity .25s;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  #queue-panel.hidden { width: 0; opacity: 0; pointer-events: none; }
+
+  .queue-header {
+    padding: 10px 12px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    font-weight: 700;
+    font-size: 13px;
+  }
+
+  .queue-add {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 6px;
+  }
+  .queue-add input {
+    flex: 1;
+    background: #111116;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--text);
+    padding: 5px 8px;
+    font-size: 12px;
+    outline: none;
+    min-width: 0;
+  }
+  .queue-add input:focus { border-color: var(--accent-a); }
+
+  #queue-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .queue-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 7px 9px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .queue-item-title {
+    font-size: 11px;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .queue-item-url {
+    font-size: 10px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .queue-item-actions {
+    display: flex;
+    gap: 5px;
+  }
+
+  .queue-item-actions .btn {
+    flex: 1;
+    text-align: center;
+    font-size: 10px;
+    padding: 3px 4px;
+  }
+
+  .queue-item-del {
+    color: var(--danger);
+    border-color: var(--danger);
+    background: transparent;
+  }
+  .queue-item-del:hover { background: rgba(239,68,68,.12); }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* ── Responsive ──────────────────────────────────────────────────── */
+  @media (max-width: 700px) {
+    #decks { flex-direction: column; }
+    #queue-panel { width: 100%; border-left: none; border-top: 1px solid var(--border); }
+    #queue-panel.hidden { width: 100%; height: 0; opacity: 0; }
+    .player-wrap iframe { height: 160px; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Header ──────────────────────────────────────────────────── -->
+  <header>
+    <h1>Deck<span>Tube</span></h1>
+    <span class="note-badge">Volume-based mixing — tracks are not beatmatched</span>
+    <button class="btn btn-sm" id="queue-toggle">☰ Queue</button>
+  </header>
+
+  <!-- ── Main ────────────────────────────────────────────────────── -->
+  <div id="main-area">
+
+    <!-- Decks -->
+    <div id="decks">
+
+      <!-- ── Deck A ─────────────────────────────────────────────── -->
+      <div class="deck deck-a" id="deck-a">
+        <div class="deck-header">
+          <span class="deck-label">A</span>
+          <span class="live-dot"></span>
+          <span class="track-title" id="title-a">No track loaded</span>
+        </div>
+
+        <div class="player-wrap">
+          <div id="player-a"></div>
+          <div class="error-overlay" id="error-a">
+            <span style="font-size:22px">⚠</span>
+            <span id="error-a-msg">Playback error</span>
+            <span style="color:var(--muted);font-size:10px">This video may have embedding disabled.</span>
+          </div>
+        </div>
+
+        <div class="deck-controls">
+
+          <div class="load-row">
+            <input type="text" id="url-a" placeholder="YouTube URL or video ID…" />
+            <button class="btn btn-a" onclick="loadDeck('a')">Load</button>
+          </div>
+
+          <div class="seek-row">
+            <input type="range" class="seek-bar" id="seek-a" min="0" max="100" value="0" step="0.1"
+                   oninput="onSeekInput('a', this.value)" onchange="onSeekCommit('a', this.value)" />
+            <span class="time-label" id="time-a">0:00 / 0:00</span>
+          </div>
+
+          <div class="transport">
+            <button class="btn btn-icon btn-a" id="play-a" onclick="togglePlay('a')" title="Play/Pause [Space when focused]">▶</button>
+            <button class="btn btn-sm"         onclick="restartDeck('a')" title="Restart">⏮</button>
+            <button class="btn btn-sm btn-a"   onclick="setCue('a')" title="Set cue point at current time">+ Cue</button>
+          </div>
+
+          <div class="cue-section">
+            <label>Cue points</label>
+            <div class="cue-list" id="cues-a"></div>
+          </div>
+
+          <div class="trim-row">
+            <label>Trim</label>
+            <input type="range" id="trim-a" min="0" max="100" value="100"
+                   oninput="onTrimChange('a', this.value)" title="Per-deck volume trim" />
+            <span id="trim-val-a" style="font-size:11px;color:var(--muted);min-width:30px">100%</span>
+          </div>
+
+          <div class="tempo-row">
+            <label>Tempo ≈</label>
+            <select id="tempo-a" onchange="onTempoChange('a', this.value)">
+              <option value="0.5">×0.5</option>
+              <option value="0.75">×0.75</option>
+              <option value="1" selected>×1.0</option>
+              <option value="1.25">×1.25</option>
+              <option value="1.5">×1.5</option>
+              <option value="2">×2.0</option>
+            </select>
+            <span class="tempo-note">(pitch shifts)</span>
+          </div>
+
+        </div>
+      </div><!-- /deck-a -->
+
+      <!-- ── Deck B ─────────────────────────────────────────────── -->
+      <div class="deck deck-b" id="deck-b">
+        <div class="deck-header">
+          <span class="deck-label">B</span>
+          <span class="live-dot"></span>
+          <span class="track-title" id="title-b">No track loaded</span>
+        </div>
+
+        <div class="player-wrap">
+          <div id="player-b"></div>
+          <div class="error-overlay" id="error-b">
+            <span style="font-size:22px">⚠</span>
+            <span id="error-b-msg">Playback error</span>
+            <span style="color:var(--muted);font-size:10px">This video may have embedding disabled.</span>
+          </div>
+        </div>
+
+        <div class="deck-controls">
+
+          <div class="load-row">
+            <input type="text" id="url-b" placeholder="YouTube URL or video ID…" />
+            <button class="btn btn-b" onclick="loadDeck('b')">Load</button>
+          </div>
+
+          <div class="seek-row">
+            <input type="range" class="seek-bar" id="seek-b" min="0" max="100" value="0" step="0.1"
+                   oninput="onSeekInput('b', this.value)" onchange="onSeekCommit('b', this.value)" />
+            <span class="time-label" id="time-b">0:00 / 0:00</span>
+          </div>
+
+          <div class="transport">
+            <button class="btn btn-icon btn-b" id="play-b" onclick="togglePlay('b')" title="Play/Pause">▶</button>
+            <button class="btn btn-sm"          onclick="restartDeck('b')" title="Restart">⏮</button>
+            <button class="btn btn-sm btn-b"    onclick="setCue('b')" title="Set cue point at current time">+ Cue</button>
+          </div>
+
+          <div class="cue-section">
+            <label>Cue points</label>
+            <div class="cue-list" id="cues-b"></div>
+          </div>
+
+          <div class="trim-row">
+            <label>Trim</label>
+            <input type="range" id="trim-b" min="0" max="100" value="100"
+                   oninput="onTrimChange('b', this.value)" title="Per-deck volume trim" />
+            <span id="trim-val-b" style="font-size:11px;color:var(--muted);min-width:30px">100%</span>
+          </div>
+
+          <div class="tempo-row">
+            <label>Tempo ≈</label>
+            <select id="tempo-b" onchange="onTempoChange('b', this.value)">
+              <option value="0.5">×0.5</option>
+              <option value="0.75">×0.75</option>
+              <option value="1" selected>×1.0</option>
+              <option value="1.25">×1.25</option>
+              <option value="1.5">×1.5</option>
+              <option value="2">×2.0</option>
+            </select>
+            <span class="tempo-note">(pitch shifts)</span>
+          </div>
+
+        </div>
+      </div><!-- /deck-b -->
+
+    </div><!-- /decks -->
+
+    <!-- ── Queue sidebar ───────────────────────────────────────── -->
+    <div id="queue-panel" class="hidden">
+      <div class="queue-header">Track Queue</div>
+      <div class="queue-add">
+        <input type="text" id="queue-url" placeholder="YouTube URL or ID…" />
+        <button class="btn btn-sm btn-primary" onclick="addToQueue()">Add</button>
+      </div>
+      <div id="queue-list"></div>
+    </div>
+
+  </div><!-- /main-area -->
+
+  <!-- ── Crossfader ──────────────────────────────────────────────── -->
+  <div id="crossfader-section">
+    <div class="cf-row">
+      <span class="cf-label cf-label-a">A</span>
+      <input type="range" id="crossfader" min="0" max="100" value="50"
+             oninput="onCrossfaderMove(this.value)" />
+      <span class="cf-label cf-label-b">B</span>
+    </div>
+
+    <div class="auto-row">
+      <button class="btn btn-sm" id="auto-btn" onclick="startAutoTransition()">Auto-transition →</button>
+      <label>Duration</label>
+      <input type="number" id="trans-dur" value="6" min="1" max="60" step="1" /> s
+      <span id="transition-status"></span>
+      <button class="btn btn-sm" id="cancel-btn" onclick="cancelTransition()" style="display:none">✕ Cancel</button>
+    </div>
+  </div>
+
+  <!-- ── Keyboard shortcuts hint ─────────────────────────────────── -->
+  <div id="shortcuts-hint">
+    <kbd>Space</kbd> Play/Pause focused deck &nbsp;|&nbsp;
+    <kbd>←</kbd><kbd>→</kbd> Nudge crossfader &nbsp;|&nbsp;
+    <kbd>A</kbd> Focus deck A &nbsp;|&nbsp;
+    <kbd>B</kbd> Focus deck B
+  </div>
+
+</div><!-- /app -->
+
+<script>
+// ════════════════════════════════════════════════════════════════════
+//  State
+// ════════════════════════════════════════════════════════════════════
+
+const players  = { a: null, b: null };
+const ready    = { a: false, b: false };
+const seeking  = { a: false, b: false };
+const pollIds  = { a: null,  b: null  };
+const trim     = { a: 100,   b: 100   };
+const cues     = { a: [],    b: []    };
+const cfPos    = { value: 50 };          // 0 = full A, 100 = full B
+let transAnimId = null;
+let transStart  = null;
+let transFrom   = 50;
+let transTarget = 50;
+let transDur    = 6000;
+let focusedDeck = 'a';
+let queue       = [];                    // [{id, title, url}]
+
+// ════════════════════════════════════════════════════════════════════
+//  YouTube URL parsing
+// ════════════════════════════════════════════════════════════════════
+
+function parseYtInput(raw) {
+  raw = (raw || '').trim();
+  if (!raw) return null;
+
+  let videoId = null;
+  let startSec = 0;
+
+  try {
+    // Try to parse as URL first
+    const url = new URL(raw.startsWith('http') ? raw : 'https://' + raw);
+    const host = url.hostname.replace('www.', '');
+
+    if (host === 'youtube.com' || host === 'm.youtube.com') {
+      if (url.pathname.startsWith('/shorts/')) {
+        videoId = url.pathname.split('/shorts/')[1].split('/')[0];
+      } else {
+        videoId = url.searchParams.get('v');
+      }
+      const t = url.searchParams.get('t') || url.searchParams.get('start');
+      if (t) startSec = parseInt(t, 10) || 0;
+    } else if (host === 'youtu.be') {
+      videoId = url.pathname.slice(1).split('?')[0];
+      const t = url.searchParams.get('t');
+      if (t) startSec = parseInt(t, 10) || 0;
+    }
+  } catch (_) {
+    // Not a URL — check if it's a bare 11-char ID
+  }
+
+  // Bare 11-char video ID (alphanumeric + - _)
+  if (!videoId && /^[A-Za-z0-9_-]{11}$/.test(raw)) {
+    videoId = raw;
+  }
+
+  if (!videoId || !/^[A-Za-z0-9_-]{11}$/.test(videoId)) return null;
+  return { videoId, startSec };
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  YouTube IFrame API bootstrap
+// ════════════════════════════════════════════════════════════════════
+
+window.onYouTubeIframeAPIReady = function () {
+  ['a', 'b'].forEach(d => {
+    players[d] = new YT.Player('player-' + d, {
+      width: '100%',
+      height: '200',
+      videoId: '',
+      playerVars: {
+        controls: 0,
+        disablekb: 1,
+        modestbranding: 1,
+        rel: 0,
+        iv_load_policy: 3,
+        origin: location.origin || 'http://localhost',
+      },
+      events: {
+        onReady:       () => onPlayerReady(d),
+        onStateChange: (e) => onPlayerState(d, e),
+        onError:       (e) => onPlayerError(d, e),
+      }
+    });
+  });
+};
+
+function onPlayerReady(d) {
+  ready[d] = true;
+  applyVolumes();
+}
+
+function onPlayerState(d, e) {
+  const state = e.data;
+  const btn = document.getElementById('play-' + d);
+  if (state === YT.PlayerState.PLAYING) {
+    btn.textContent = '⏸';
+    document.getElementById('deck-' + d).classList.add('live');
+    startPoll(d);
+    focusedDeck = d;
+  } else {
+    btn.textContent = '▶';
+    if (state === YT.PlayerState.PAUSED || state === YT.PlayerState.ENDED) {
+      document.getElementById('deck-' + d).classList.remove('live');
+    }
+  }
+  if (state === YT.PlayerState.ENDED) {
+    stopPoll(d);
+  }
+}
+
+function onPlayerError(d, e) {
+  const msgs = {
+    2:   'Invalid video ID.',
+    5:   'HTML5 player error.',
+    100: 'Video not found or private.',
+    101: 'Embedding disabled by owner.',
+    150: 'Embedding disabled by owner.',
+  };
+  const msg = msgs[e.data] || 'Playback error (code ' + e.data + ').';
+  document.getElementById('error-' + d + '-msg').textContent = msg;
+  document.getElementById('error-' + d).classList.add('visible');
+  stopPoll(d);
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  Deck loading
+// ════════════════════════════════════════════════════════════════════
+
+function loadDeck(d, inputUrl) {
+  const raw = inputUrl || document.getElementById('url-' + d).value;
+  const parsed = parseYtInput(raw);
+  if (!parsed) {
+    alert('Could not parse that YouTube URL or video ID. Please check and try again.');
+    return;
+  }
+  if (!ready[d]) {
+    alert('Player not ready yet. Please wait a moment.');
+    return;
+  }
+
+  // Clear error
+  document.getElementById('error-' + d).classList.remove('visible');
+  // Clear cue polling
+  stopPoll(d);
+  // Cue (don't autoplay)
+  players[d].cueVideoById({ videoId: parsed.videoId, startSeconds: parsed.startSec });
+  document.getElementById('title-' + d).textContent = 'Loading…';
+  document.getElementById('seek-' + d).value = 0;
+  document.getElementById('time-' + d).textContent = '0:00 / 0:00';
+  document.getElementById('play-' + d).textContent = '▶';
+  document.getElementById('deck-' + d).classList.remove('live');
+
+  // Update title after a short delay (API doesn't give it instantly)
+  setTimeout(() => {
+    if (players[d] && ready[d]) {
+      const info = players[d].getVideoData();
+      if (info && info.title) {
+        document.getElementById('title-' + d).textContent = info.title;
+      } else {
+        document.getElementById('title-' + d).textContent = parsed.videoId;
+      }
+      // Start seek bar with correct duration
+      const dur = players[d].getDuration() || 0;
+      updateSeekDisplay(d, 0, dur);
+    }
+  }, 1500);
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  Transport
+// ════════════════════════════════════════════════════════════════════
+
+function togglePlay(d) {
+  if (!ready[d]) return;
+  const state = players[d].getPlayerState();
+  if (state === YT.PlayerState.PLAYING) {
+    players[d].pauseVideo();
+  } else {
+    players[d].playVideo();
+  }
+}
+
+function restartDeck(d) {
+  if (!ready[d]) return;
+  players[d].seekTo(0, true);
+  players[d].playVideo();
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  Seek bar
+// ════════════════════════════════════════════════════════════════════
+
+function startPoll(d) {
+  stopPoll(d);
+  pollIds[d] = setInterval(() => {
+    if (!ready[d] || seeking[d]) return;
+    const cur = players[d].getCurrentTime() || 0;
+    const dur = players[d].getDuration() || 0;
+    updateSeekDisplay(d, cur, dur);
+  }, 250);
+}
+
+function stopPoll(d) {
+  if (pollIds[d]) { clearInterval(pollIds[d]); pollIds[d] = null; }
+}
+
+function updateSeekDisplay(d, cur, dur) {
+  const pct = dur > 0 ? (cur / dur) * 100 : 0;
+  if (!seeking[d]) document.getElementById('seek-' + d).value = pct;
+  document.getElementById('time-' + d).textContent = fmtTime(cur) + ' / ' + fmtTime(dur);
+}
+
+function onSeekInput(d, pct) {
+  seeking[d] = true;
+  if (!ready[d]) return;
+  const dur = players[d].getDuration() || 0;
+  const cur = (pct / 100) * dur;
+  document.getElementById('time-' + d).textContent = fmtTime(cur) + ' / ' + fmtTime(dur);
+}
+
+function onSeekCommit(d, pct) {
+  seeking[d] = false;
+  if (!ready[d]) return;
+  const dur = players[d].getDuration() || 0;
+  players[d].seekTo((pct / 100) * dur, true);
+}
+
+function fmtTime(s) {
+  s = Math.floor(s || 0);
+  const m = Math.floor(s / 60);
+  const sec = String(s % 60).padStart(2, '0');
+  return m + ':' + sec;
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  Volume / Crossfader (equal-power curve)
+// ════════════════════════════════════════════════════════════════════
+
+function applyVolumes() {
+  const x = cfPos.value / 100;                    // 0..1
+  const gainA = Math.cos(x * Math.PI / 2);        // 1→0
+  const gainB = Math.sin(x * Math.PI / 2);        // 0→1
+
+  ['a', 'b'].forEach(d => {
+    if (!ready[d]) return;
+    const g = d === 'a' ? gainA : gainB;
+    const vol = Math.round(g * (trim[d] / 100) * 100);
+    players[d].setVolume(vol);
+  });
+}
+
+function onCrossfaderMove(val) {
+  cfPos.value = Number(val);
+  applyVolumes();
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  Auto-transition
+// ════════════════════════════════════════════════════════════════════
+
+function startAutoTransition() {
+  if (transAnimId) cancelTransition();
+
+  const dur = Math.max(1, parseFloat(document.getElementById('trans-dur').value) || 6) * 1000;
+  // Decide direction: if fader is on A side (< 50) go toward B, else toward A
+  transFrom   = cfPos.value;
+  transTarget = cfPos.value < 50 ? 100 : 0;
+  transDur    = dur;
+  transStart  = performance.now();
+
+  const btn = document.getElementById('auto-btn');
+  btn.textContent = transTarget === 100 ? 'Fading → B…' : 'Fading → A…';
+  btn.disabled = true;
+  document.getElementById('cancel-btn').style.display = '';
+
+  function step(now) {
+    const elapsed = now - transStart;
+    const t = Math.min(elapsed / transDur, 1);
+    // Ease in-out cubic
+    const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    const val = transFrom + (transTarget - transFrom) * ease;
+    cfPos.value = val;
+    document.getElementById('crossfader').value = val;
+    applyVolumes();
+
+    if (t < 1) {
+      transAnimId = requestAnimationFrame(step);
+    } else {
+      finishTransition();
+    }
+  }
+  transAnimId = requestAnimationFrame(step);
+}
+
+function cancelTransition() {
+  if (transAnimId) { cancelAnimationFrame(transAnimId); transAnimId = null; }
+  finishTransition();
+}
+
+function finishTransition() {
+  transAnimId = null;
+  const btn = document.getElementById('auto-btn');
+  btn.textContent = 'Auto-transition →';
+  btn.disabled = false;
+  document.getElementById('cancel-btn').style.display = 'none';
+  document.getElementById('transition-status').textContent = '';
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  Cue points
+// ════════════════════════════════════════════════════════════════════
+
+function setCue(d) {
+  if (!ready[d]) return;
+  const t = players[d].getCurrentTime() || 0;
+  cues[d].push(t);
+  renderCues(d);
+  savePersist();
+}
+
+function jumpCue(d, idx) {
+  if (!ready[d]) return;
+  players[d].seekTo(cues[d][idx], true);
+}
+
+function deleteCue(d, idx) {
+  cues[d].splice(idx, 1);
+  renderCues(d);
+  savePersist();
+}
+
+function renderCues(d) {
+  const el = document.getElementById('cues-' + d);
+  el.innerHTML = '';
+  cues[d].forEach((t, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'cue-chip';
+    chip.innerHTML = `<span onclick="jumpCue('${d}',${i})">${fmtTime(t)}</span>
+                      <span class="del" onclick="event.stopPropagation();deleteCue('${d}',${i})">✕</span>`;
+    el.appendChild(chip);
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  Per-deck trim
+// ════════════════════════════════════════════════════════════════════
+
+function onTrimChange(d, val) {
+  trim[d] = Number(val);
+  document.getElementById('trim-val-' + d).textContent = val + '%';
+  applyVolumes();
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  Tempo nudge
+// ════════════════════════════════════════════════════════════════════
+
+function onTempoChange(d, val) {
+  if (!ready[d]) return;
+  players[d].setPlaybackRate(parseFloat(val));
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  Queue
+// ════════════════════════════════════════════════════════════════════
+
+document.getElementById('queue-toggle').addEventListener('click', () => {
+  const panel = document.getElementById('queue-panel');
+  panel.classList.toggle('hidden');
+});
+
+document.getElementById('queue-url').addEventListener('keydown', e => {
+  if (e.key === 'Enter') addToQueue();
+});
+
+function addToQueue() {
+  const input = document.getElementById('queue-url');
+  const raw = input.value.trim();
+  if (!raw) return;
+  const parsed = parseYtInput(raw);
+  if (!parsed) { alert('Could not parse that URL or video ID.'); return; }
+  queue.push({ id: parsed.videoId, startSec: parsed.startSec, url: raw, title: parsed.videoId });
+  input.value = '';
+  renderQueue();
+  savePersist();
+  // Try to fetch title
+  fetchTitle(parsed.videoId, queue.length - 1);
+}
+
+function fetchTitle(videoId, idx) {
+  // Use oEmbed (no API key needed, CORS allowed)
+  fetch('https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=' + videoId + '&format=json')
+    .then(r => r.json())
+    .then(data => {
+      if (queue[idx]) {
+        queue[idx].title = data.title || videoId;
+        renderQueue();
+        savePersist();
+      }
+    })
+    .catch(() => {});
+}
+
+function loadFromQueue(idx, d) {
+  const item = queue[idx];
+  if (!item) return;
+  const url = 'https://www.youtube.com/watch?v=' + item.id + (item.startSec ? '&t=' + item.startSec : '');
+  document.getElementById('url-' + d).value = url;
+  loadDeck(d, url);
+}
+
+function removeFromQueue(idx) {
+  queue.splice(idx, 1);
+  renderQueue();
+  savePersist();
+}
+
+function renderQueue() {
+  const list = document.getElementById('queue-list');
+  list.innerHTML = '';
+  if (queue.length === 0) {
+    list.innerHTML = '<div style="color:var(--muted);font-size:11px;padding:10px;text-align:center">Queue is empty</div>';
+    return;
+  }
+  queue.forEach((item, i) => {
+    const el = document.createElement('div');
+    el.className = 'queue-item';
+    el.innerHTML = `
+      <div class="queue-item-title">${escHtml(item.title)}</div>
+      <div class="queue-item-url">${escHtml(item.url)}</div>
+      <div class="queue-item-actions">
+        <button class="btn btn-sm btn-a" onclick="loadFromQueue(${i},'a')">→ A</button>
+        <button class="btn btn-sm btn-b" onclick="loadFromQueue(${i},'b')">→ B</button>
+        <button class="btn btn-sm queue-item-del" onclick="removeFromQueue(${i})">✕</button>
+      </div>
+    `;
+    list.appendChild(el);
+  });
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  Keyboard shortcuts
+// ════════════════════════════════════════════════════════════════════
+
+document.addEventListener('keydown', e => {
+  // Don't fire when typing in inputs
+  if (['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)) return;
+
+  if (e.code === 'Space') {
+    e.preventDefault();
+    togglePlay(focusedDeck);
+  }
+  if (e.code === 'ArrowLeft') {
+    e.preventDefault();
+    const cf = document.getElementById('crossfader');
+    const newVal = Math.max(0, cfPos.value - 2);
+    cfPos.value = newVal;
+    cf.value = newVal;
+    applyVolumes();
+  }
+  if (e.code === 'ArrowRight') {
+    e.preventDefault();
+    const cf = document.getElementById('crossfader');
+    const newVal = Math.min(100, cfPos.value + 2);
+    cfPos.value = newVal;
+    cf.value = newVal;
+    applyVolumes();
+  }
+  if (e.code === 'KeyA') { focusedDeck = 'a'; highlightFocus(); }
+  if (e.code === 'KeyB') { focusedDeck = 'b'; highlightFocus(); }
+});
+
+function highlightFocus() {
+  // Brief visual flash on focused deck label
+  const label = document.querySelector('#deck-' + focusedDeck + ' .deck-label');
+  label.style.textShadow = '0 0 8px currentColor';
+  setTimeout(() => { label.style.textShadow = ''; }, 300);
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  Persistence (localStorage)
+// ════════════════════════════════════════════════════════════════════
+
+function savePersist() {
+  try {
+    localStorage.setItem('decktube_queue', JSON.stringify(queue));
+    localStorage.setItem('decktube_cues', JSON.stringify(cues));
+  } catch(_) {}
+}
+
+function loadPersist() {
+  try {
+    const q = localStorage.getItem('decktube_queue');
+    if (q) { queue = JSON.parse(q); renderQueue(); }
+    const c = localStorage.getItem('decktube_cues');
+    if (c) {
+      const saved = JSON.parse(c);
+      ['a','b'].forEach(d => {
+        if (Array.isArray(saved[d])) { cues[d] = saved[d]; renderCues(d); }
+      });
+    }
+  } catch(_) {}
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  Enter key on deck URL inputs
+// ════════════════════════════════════════════════════════════════════
+
+['a','b'].forEach(d => {
+  document.getElementById('url-' + d).addEventListener('keydown', e => {
+    if (e.key === 'Enter') loadDeck(d);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════
+//  Init
+// ════════════════════════════════════════════════════════════════════
+
+renderQueue();
+loadPersist();
+</script>
+
+<!-- Load YouTube IFrame API -->
+<script src="https://www.youtube.com/iframe_api"></script>
+</body>
+</html>
