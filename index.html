@@ -531,6 +531,10 @@
 </style>
 </head>
 <body>
+<div id="file-warning" style="display:none;background:#7c2d12;color:#fef3c7;padding:10px 18px;font-size:13px;text-align:center;border-bottom:2px solid #f97316;">
+  ⚠ <strong>You must serve this file over HTTP</strong> — YouTube blocks embedding when opened directly as a <code>file://</code> URL.<br>
+  Run: <code>npx serve .</code> &nbsp;or&nbsp; <code>python3 -m http.server 8080</code> &nbsp;in this folder, then open <code>http://localhost:8080</code>.
+</div>
 <div id="app">
 
   <!-- ── Header ──────────────────────────────────────────────────── -->
@@ -1245,6 +1249,10 @@ function loadPersist() {
 
 renderQueue();
 loadPersist();
+
+if (location.protocol === 'file:') {
+  document.getElementById('file-warning').style.display = 'block';
+}
 </script>
 
 <!-- Load YouTube IFrame API -->
